@@ -403,6 +403,49 @@ function mount(host, options) {
     if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openEditor(bar.dataset.id); }
   });
 
+  // ── свой календарь вместо системного выбора даты ────────────────
+  function calendar(value, min, onPick) {
+    var box = el('div', 'g-cal');
+    var view = new Date(value.getFullYear(), value.getMonth(), 1);
+    var minMonth = new Date(min.getFullYear(), min.getMonth(), 1);
+    function paint() {
+      box.innerHTML = '';
+      var head = el('div', 'g-cal-head');
+      var prev = el('button', 'g-cal-nav', '‹'); prev.type = 'button';
+      var next = el('button', 'g-cal-nav', '›'); next.type = 'button';
+      prev.setAttribute('aria-label', 'Предыдущий месяц');
+      next.setAttribute('aria-label', 'Следующий месяц');
+      prev.disabled = view <= minMonth;
+      prev.addEventListener('click', function () { view = new Date(view.getFullYear(), view.getMonth() - 1, 1); paint(); });
+      next.addEventListener('click', function () { view = new Date(view.getFullYear(), view.getMonth() + 1, 1); paint(); });
+      var title = fmtMonth.format(view).replace(/\s*г\.$/, '');
+      head.appendChild(prev);
+      head.appendChild(el('b', '', title.charAt(0).toUpperCase() + title.slice(1)));
+      head.appendChild(next);
+      box.appendChild(head);
+      var grid = el('div', 'g-cal-grid');
+      ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'].forEach(function (d) { grid.appendChild(el('span', 'g-cal-dow', d)); });
+      var offset = (view.getDay() + 6) % 7;
+      for (var i = 0; i < offset; i++) grid.appendChild(el('span'));
+      var total = new Date(view.getFullYear(), view.getMonth() + 1, 0).getDate();
+      for (var d = 1; d <= total; d++) {
+        (function (day) {
+          var b = el('button', 'g-cal-day', String(day.getDate()));
+          b.type = 'button';
+          b.disabled = day < midnight(min);
+          if (!diffDays(day, value)) b.setAttribute('aria-pressed', 'true');
+          if (!diffDays(day, new Date())) b.classList.add('today');
+          b.addEventListener('click', function () { onPick(day); });
+          grid.appendChild(b);
+        })(new Date(view.getFullYear(), view.getMonth(), d));
+      }
+      box.appendChild(grid);
+      box.appendChild(el('p', 'g-cal-note', 'Раньше ' + long(min) + ' нельзя — не закончен предыдущий этап'));
+    }
+    paint();
+    return box;
+  }
+
   // ── окно этапа: даты и длительность ─────────────────────────────
   var editor = el('div', 'g-editor');
   editor.hidden = true;
@@ -417,6 +460,12 @@ function mount(host, options) {
     editorFor = id;
     editor.innerHTML = '';
     editor.hidden = false;
+    // на компьютере — рядом с этапом, на телефоне — панель снизу экрана (стилями)
+    var bar = host.querySelector('.g-bar[data-id="' + id + '"]');
+    if (bar) {
+      var hostTop = host.getBoundingClientRect().top;
+      editor.style.top = Math.max(8, bar.getBoundingClientRect().bottom - hostTop + 8) + 'px';
+    }
     var top = el('div', 'g-ed-top');
     top.appendChild(el('b', '', row.stage.name));
     var x = el('button', 'g-ed-x', '×');
@@ -434,23 +483,25 @@ function mount(host, options) {
       return;
     }
 
-    var startField = el('label', 'g-ed-field');
+    var startField = el('div', 'g-ed-field');
     startField.appendChild(el('span', '', 'Начало этапа'));
-    var input = el('input', 'inp');
-    input.type = 'date';
-    input.value = iso(startDate);
-    input.min = iso(addDays(state.start, row.earliest));
-    input.addEventListener('change', function () {
-      if (!input.value) return;
-      var picked = diffDays(new Date(input.value + 'T00:00:00'), state.start);
-      if (picked < row.earliest) {
-        say('Раньше ' + long(addDays(state.start, row.earliest)) + ' нельзя: не закончен предыдущий этап');
-        picked = row.earliest;
-      }
-      state.delay[id] = picked - row.earliest;
+    var earliest = addDays(state.start, row.earliest);
+    var pickBtn = el('button', 'inp g-date-btn');
+    pickBtn.type = 'button';
+    pickBtn.setAttribute('aria-expanded', 'false');
+    pickBtn.innerHTML = '<span>' + long(startDate) + '</span><svg viewBox="0 0 24 24" aria-hidden="true">' +
+      '<rect x="3.5" y="5" width="17" height="15" rx="2.5"/><path d="M3.5 10h17M8 3v4M16 3v4"/></svg>';
+    var cal = calendar(startDate, earliest, function (day) {
+      state.delay[id] = diffDays(day, state.start) - row.earliest;
       render();
     });
-    startField.appendChild(input);
+    cal.hidden = true;
+    pickBtn.addEventListener('click', function () {
+      cal.hidden = !cal.hidden;
+      pickBtn.setAttribute('aria-expanded', cal.hidden ? 'false' : 'true');
+    });
+    startField.appendChild(pickBtn);
+    startField.appendChild(cal);
     editor.appendChild(startField);
 
     var durField = el('div', 'g-ed-field');
