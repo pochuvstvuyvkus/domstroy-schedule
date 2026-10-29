@@ -41,7 +41,7 @@ function diffDays(a, b) { return Math.round((midnight(a) - midnight(b)) / DAY); 
 var fmtLong = new Intl.DateTimeFormat('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' });
 var fmtShort = new Intl.DateTimeFormat('ru-RU', { day: '2-digit', month: '2-digit' });
 var fmtMonth = new Intl.DateTimeFormat('ru-RU', { month: 'long', year: 'numeric' });
-var fmtMonthShort = new Intl.DateTimeFormat('ru-RU', { month: 'short' });
+var MONTH3 = ['Янв', 'Фев', 'Мар', 'Апр', 'Май', 'Июн', 'Июл', 'Авг', 'Сен', 'Окт', 'Ноя', 'Дек'];
 function long(d) { return fmtLong.format(d).replace(/\s*г\.$/, ''); }
 function short(d) { return fmtShort.format(d); }
 function iso(d) { var x = midnight(d); return x.getFullYear() + '-' + pad(x.getMonth() + 1) + '-' + pad(x.getDate()); }
@@ -256,10 +256,10 @@ function mount(host, options) {
       var monthEnd = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 1);
       if (monthEnd > last) monthEnd = last;
       var w = diffDays(monthEnd, cursor) * px;
-      var label = w > 100 ? fmtMonth.format(cursor).replace(/\s*г\.$/, '')
-        : w > 26 ? fmtMonthShort.format(cursor).replace('.', '') : '';
-      label = label.charAt(0).toUpperCase() + label.slice(1);   // «Декабрь 2026», «Янв»
-      var m = el('div', 'g-month', label);
+      var full = fmtMonth.format(cursor).replace(/\s*г\.$/, '');
+      var label = w > 110 ? full.charAt(0).toUpperCase() + full.slice(1)   // «Декабрь 2026»
+        : w >= 32 ? MONTH3[cursor.getMonth()] : '';                        // «Янв», узкий — без подписи
+      var m = el('div', 'g-month' + (w > 110 ? '' : ' short'), label);
       m.style.left = diffDays(cursor, origin) * px + 'px';
       m.style.width = w + 'px';
       monthsRow.appendChild(m);

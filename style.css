@@ -383,6 +383,7 @@ textarea.inp{min-height:86px;padding:12px 14px;resize:vertical;line-height:1.5}
 .g-months,.g-units{position:relative;height:26px}
 .g-month{position:absolute;top:0;height:26px;padding:5px 8px 0;font-size:12px;font-weight:600;white-space:nowrap;
   overflow:hidden;border-left:1px solid var(--line-strong);text-transform:capitalize}
+.g-month.short{padding-left:5px;padding-right:2px;overflow:hidden}
 .g-unit{position:absolute;top:0;height:26px;display:grid;place-items:center;font-family:var(--mono);font-size:10.5px;
   color:var(--muted);border-left:1px solid var(--line)}
 .g-unit.wknd{color:var(--g-today)}
