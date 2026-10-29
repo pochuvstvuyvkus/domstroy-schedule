@@ -168,7 +168,7 @@
   var busy = false;                    // защита от повторного входа при каскаде
 
   var ZOOMS = {
-    day: { min: 30, scales: [{ unit: 'month', step: 1, format: function (d) { return fmtMonth.format(d).replace(/\s*г\.$/, ''); } },
+    day: { min: 36, scales: [{ unit: 'month', step: 1, format: function (d) { return fmtMonth.format(d).replace(/\s*г\.$/, ''); } },
                              { unit: 'day', step: 1, format: '%j', css: function (d) { return (isWeekend(d) ? 'wk' : '') + (diffDays(d, today()) === 0 ? ' is-today' : ''); } }] },
     week: { min: 54, scales: [{ unit: 'month', step: 1, format: function (d) { return fmtMonth.format(d).replace(/\s*г\.$/, ''); } },
                               { unit: 'week', step: 1, format: function (d) { return dm(d); } }] },
@@ -291,16 +291,16 @@
     c.open_tree_initially = true;
     c.drag_move = true;
     c.drag_resize = true;
-    c.drag_progress = true;
+    c.drag_progress = false;               // готовность — в окне работы: ручка мешала хватать короткие полоски
     c.drag_links = true;
-    c.drag_project = false;
+    c.drag_project = true;                 // этап тянется целиком вместе со своими работами
     c.order_branch = true;
     c.order_branch_free = true;
     c.details_on_dblclick = false;
     c.details_on_create = false;
     c.show_errors = false;
     c.fit_tasks = true;
-    c.touch = 'force';
+    c.touch = true;                        // сенсорный режим только на телефонах и планшетах
     c.touch_drag = 350;                     // задержать палец — и тянуть; обычный свайп прокручивает
     c.touch_feedback = true;
     c.tooltip_timeout = 350;
@@ -396,9 +396,9 @@
       return false;
     });
     gantt.attachEvent('onBeforeTaskDrag', function (id, dragMode) {
-      if (mode === 'crew') return false;
       var task = gantt.getTask(id);
-      if (task.type === 'project') return false;
+      if (mode === 'crew') return task.type !== 'project' && !!task.objId;
+      if (task.type === 'project' && dragMode !== 'move') return false;
       if (task.kind === 'material' && dragMode !== 'move') return false;
       pushUndo();
       dragOrig = { id: id, start: new Date(task.start_date), end: new Date(task.end_date) };
@@ -406,8 +406,26 @@
     });
     gantt.attachEvent('onAfterTaskDrag', function (id, dragMode) {
       var task = gantt.getTask(id);
+      if (mode === 'crew') { crewDragDone(task); return; }
+      // при переносе этапа библиотека сообщает и о каждой работе внутри — их уже сдвинули вместе с этапом
+      if (dragOrig && String(dragOrig.id) !== String(id)) return;
       if (dragMode === 'progress') { syncStore(); return; }
+      if (task.type === 'project') {
+        var stageId = id, stageText = task.text;
+        setTimeout(function () {
+          dragOrig = null;
+          // работы и поставки внутри уже переехали, двигаем то, что идёт после них
+          var moved = 0;
+          gantt.eachTask(function (c) { if (c.type !== 'project' && c.kind !== 'material') moved += cascade(c.id); }, stageId);
+          syncStore();
+          var d = gantt.getSubtaskDates(stageId);
+          toast('Этап «' + stageText + '»: ' + dm(d.start_date) + '–' + dm(addDays(d.end_date, -1)) +
+            (moved ? ' · сдвинуто работ после него: ' + moved : ''), 'Отменить', undo);
+        }, 0);
+        return;
+      }
       var shiftedStart = dragOrig ? diffDays(task.start_date, dragOrig.start) : 0;
+      dragOrig = null;
       if (task.kind === 'material') { markMoved(task); syncStore(); return; }
       if (shiftedStart) shiftMaterials(id, shiftedStart);
       var n = cascade(id);
@@ -505,6 +523,7 @@
     var scroll = keepScroll ? gantt.getScrollState() : null;
     mode = 'object';
     gantt.config.readonly = false;
+    gantt.config.drag_links = true;
     gantt.config.columns = objectColumns();
     applyLayout('object');
     gantt.clearAll();
@@ -707,6 +726,7 @@
       ? [[ICON.tap, 'Нажмите на работу', ' — сроки, бригада, готовность'], [ICON.hold, 'Задержите палец', ' на полоске — перетащить']]
       : [[ICON.move, 'Тяните полоску', ' — сдвинуть работу'], [ICON.edge, 'Тяните край', ' — изменить срок'],
          [ICON.link, 'Кружок на краю', ' → на другую работу — связать'], [ICON.tap, 'Нажмите на полоску', ' — подробности']];
+    if (mode === 'crew') tips = [[ICON.move, 'Тяните полоску', ' — сдвинуть работу'], [ICON.tap, 'Нажмите', ' — сроки, готовность, другая бригада']];
     $('#tips').innerHTML = tips.map(function (t) { return '<span>' + t[0] + '<span><b>' + t[1] + '</b>' + t[2] + '</span></span>'; }).join('') +
       '<button class="link" type="button" data-help>Как пользоваться</button>';
   }
@@ -1410,7 +1430,8 @@
     if (!ganttReady) setupGantt();
     if ($('#gantt').parentNode !== host) host.appendChild($('#gantt'));
     mode = 'crew';
-    gantt.config.readonly = true;
+    gantt.config.readonly = false;
+    gantt.config.drag_links = false;
     gantt.config.columns = crewColumns();
     applyLayout('crew');
     gantt.clearAll();
@@ -1421,6 +1442,23 @@
     if (scrollToPlan) $('.crew-plan').scrollIntoView({ behavior: 'smooth', block: 'start' });
     var sel = $('.ccard[aria-pressed="true"]');
     if (sel && MOBILE.matches) $('#crewGrid').scrollLeft = sel.offsetLeft - 12;
+  }
+
+  // сдвинули работу на графике бригады — меняем её на объекте и пересчитываем пересечения
+  function crewDragDone(g) {
+    var obj = objById(g.objId);
+    var t = obj && obj.tasks.filter(function (x) { return x.id === g.taskId; })[0];
+    if (!t) return;
+    var shift = diffDays(g.start_date, parse(t.start));
+    t.start = iso(g.start_date);
+    t.duration = g.duration;
+    storeShiftMaterials(obj, t.id, shift);
+    var n = storeCascade(obj, t.id);
+    saveStore();
+    var sx = gantt.getScrollState();
+    openCrews();
+    gantt.scrollTo(sx.x, sx.y);
+    toast('«' + t.text + '»: ' + dm(g.start_date) + '–' + dm(addDays(g.end_date, -1)) + (n ? ' · на объекте сдвинуто работ: ' + n : ''));
   }
 
   // окно работы бригады — правим прямо здесь, без перехода в объект
@@ -1569,17 +1607,18 @@
         'Значок карандаша рядом с названием объекта — изменить название, адрес, статус или удалить объект.']],
       ['График объекта', ['Слева — работы по этапам, справа — те же работы полосками по дням. Красная линия — сегодня.',
         '<b>Сдвинуть работу</b> — потяните полоску мышью. <b>Изменить срок</b> — потяните за левый или правый край. Работы, которые идут после неё, сдвинутся сами.',
+        '<b>Сдвинуть весь этап</b> — потяните тёмную полосу этапа: все его работы и поставки переедут вместе с ней.',
         '<b>Связать работы</b> — наведите на полоску и потяните кружок с её конца на начало другой работы. Или откройте работу → «Начинается после» → «+ добавить».',
         '<b>Подробности</b> — нажмите на полоску: сроки через календарь, бригада, готовность, комментарий, поставки, удаление.',
         '<b>Переименовать</b> — нажмите на название в таблице и напишите новое.',
         '<b>Добавить</b> — «+ Работа» и «+ Этап» на панели или «+» в конце строки (новая работа встанет сразу после этой).',
         '<b>Отменить</b> последнее действие — кнопка «↶ Отменить» или <span class="kbd">Ctrl+Z</span>.',
-        'Масштаб — «День», «Неделя», «Месяц». «Сегодня» — вернуться к текущей дате.']],
+        'Масштаб — «День», «Неделя», «Месяц». «Сегодня» — вернуться к текущей дате.', 'Готовность работы (%) — в окне работы: ползунок или кнопки 25/50/75/Готово.']],
       ['План и факт', ['Когда график согласован, нажмите <b>«Зафиксировать план»</b>.',
         'Дальше под каждой полоской серая линия — как было по плану, красная над полоской — насколько работа опаздывает. В колонке «Откл.» и в шапке объекта — отставание в днях.']],
       ['Бригады', ['Справочник бригад: бригадир, телефон, чем занята сейчас и что дальше. «+ Бригада» — добавить, карандаш — изменить.',
         '<b>Нажмите на бригаду</b> — внизу появятся все её работы на всех объектах. Красным — если в одни дни она нужна в двух местах.',
-        '<b>Нажмите на работу</b> — можно поменять сроки, готовность или передать другой бригаде прямо там.']],
+        '<b>Тяните полоску</b> работы, чтобы развести бригаду по датам, или <b>нажмите на неё</b> — поменять сроки, готовность или передать другой бригаде.']],
       ['Поставки материалов', ['Ромбики на графике: <span class="swatch" style="background:var(--plan)"></span> не заказано, <span class="swatch" style="background:var(--accent)"></span> заказано, <span class="swatch" style="background:var(--ok)"></span> доставлено.',
         '«+ Поставка» — добавить. Поставка привязана к работе и сдвигается вместе с ней. Переключатель «Материалы» прячет поставки.']],
       ['Excel и печать', ['«Excel» — скачать график таблицей по неделям и список поставок. «Печать» — график на листе А4 для планёрки.']],
