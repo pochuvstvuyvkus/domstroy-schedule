@@ -80,7 +80,7 @@ main{padding:18px clamp(12px,3vw,28px) 40px}
 
 /* ── карточки объектов ─────────────────────────────── */
 .obj-grid{display:grid;gap:14px;grid-template-columns:repeat(auto-fill,minmax(300px,1fr))}
-.ocard{display:grid;gap:12px;padding:18px;border:1px solid var(--line);border-radius:var(--radius);background:var(--surface);
+.ocard{display:grid;gap:12px;padding:18px;min-width:0;border:1px solid var(--line);border-radius:var(--radius);background:var(--surface);
   cursor:pointer;text-align:left;transition:border-color .15s,box-shadow .15s}
 .ocard:hover,.ocard:focus-visible{border-color:var(--accent);box-shadow:var(--shadow-s);outline:none}
 .ocard-top{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}
@@ -88,7 +88,10 @@ main{padding:18px clamp(12px,3vw,28px) 40px}
 .ocard .addr{font-size:13.5px;color:var(--muted)}
 .bar{height:8px;border-radius:99px;background:var(--surface-2);overflow:hidden}
 .bar i{display:block;height:100%;background:var(--accent);border-radius:99px}
-.ocard .row{display:flex;justify-content:space-between;gap:10px;font-size:13.5px}
+.ocard>*{min-width:0}
+.ocard .row{display:flex;justify-content:space-between;align-items:baseline;gap:10px;font-size:13.5px}
+.ocard .chips{display:flex;flex-wrap:wrap;gap:6px}
+.ocard h3{overflow-wrap:anywhere}
 .ocard .row b{font-family:var(--mono);font-size:13px}
 .ocard .now{font-size:13.5px;padding:10px 12px;border-radius:10px;background:var(--surface-2)}
 .ocard .now span{color:var(--muted)}
@@ -119,7 +122,6 @@ main{padding:18px clamp(12px,3vw,28px) 40px}
 .switch input:checked+span{background:var(--accent)}
 .switch input:checked+span::after{transform:translateX(15px)}
 .switch input:focus-visible+span{outline:2px solid var(--accent);outline-offset:2px}
-.hint-line{font-size:13px}
 .legend{display:flex;flex-wrap:wrap;gap:6px 16px;font-size:12.5px;color:var(--muted)}
 .legend span{display:inline-flex;align-items:center;gap:6px}
 .legend i{display:inline-block;width:18px;height:8px;border-radius:3px}
@@ -180,7 +182,6 @@ main{padding:18px clamp(12px,3vw,28px) 40px}
 #gantt .gantt_task_line.gantt_project .gantt_task_progress{background:var(--accent)}
 #gantt .gantt_task_line.gantt_selected{box-shadow:0 0 0 2px var(--surface),0 0 0 4px var(--accent)}
 #gantt .gantt_task_line.t-conflict{box-shadow:0 0 0 2px var(--surface),0 0 0 4px var(--bad)}
-#gantt .gantt_task_progress_drag{background:var(--surface);border:2px solid var(--ink)}
 #gantt .gantt_side_content{font-size:12px;color:var(--muted)}
 /* поставки материалов — ромбик с подписью справа */
 #gantt .gantt_task_line.gantt_milestone.t-mat{background:var(--plan)}
@@ -343,3 +344,75 @@ textarea.inp{min-height:72px;padding:10px 12px;resize:vertical}
 }
 #gantt .gantt_task_cell,#gantt .gantt_task_row,#gantt .gantt_row,#gantt .gantt_grid_head_cell,#gantt .gantt_scale_cell,
 #gantt .gantt_grid_scale,#gantt .gantt_task_scale,#gantt .gantt_scale_line{border-color:var(--line)}
+
+/* ── помощь ───────────────────────────────────────── */
+.help-btn{display:inline-flex;align-items:center;gap:8px;min-height:38px;padding:0 12px 0 6px;border:1px solid var(--line-strong);
+  border-radius:10px;background:transparent;cursor:pointer;font-weight:600;font-size:13.5px;white-space:nowrap}
+.help-btn:hover{border-color:var(--ink)}
+.help-btn .q{display:grid;place-items:center;width:24px;height:24px;border-radius:7px;background:var(--accent);color:var(--accent-ink);font-weight:800}
+@media (max-width:760px){.help-btn .t{display:none}.help-btn{padding:0 6px}}
+.help{display:grid;gap:18px}
+.help section{display:grid;gap:8px}
+.help h3{font-size:15px;display:flex;align-items:center;gap:8px}
+.help h3 .n{display:grid;place-items:center;width:22px;height:22px;border-radius:7px;background:var(--accent-soft);color:var(--warn);font-size:12px}
+.help ul{margin:0;padding-left:18px;display:grid;gap:5px;font-size:14px}
+.help li b{font-weight:600}
+.help .kbd{font-family:var(--mono);font-size:12px;padding:1px 6px;border:1px solid var(--line-strong);border-radius:6px}
+.swatch{display:inline-block;width:12px;height:12px;border-radius:3px;vertical-align:-1px}
+
+/* ── подсказки над графиком ────────────────────────── */
+.tips{display:flex;flex-wrap:wrap;align-items:center;gap:8px 18px;font-size:13px;color:var(--muted)}
+.tips span{display:inline-flex;align-items:center;gap:7px}
+.tips svg{width:18px;height:18px;flex:none;fill:none;stroke:var(--accent);stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.tips b{color:var(--ink);font-weight:600}
+.tips .link{font-size:13px}
+
+/* ── бригады ───────────────────────────────────────── */
+.crew-grid{display:grid;gap:12px;grid-template-columns:repeat(auto-fill,minmax(250px,1fr))}
+.ccard{position:relative;display:grid;gap:8px;align-content:start;padding:14px 16px;border:1px solid var(--line);border-radius:14px;
+  background:var(--surface);cursor:pointer;text-align:left;min-width:0;transition:border-color .15s,box-shadow .15s}
+.ccard:hover{border-color:var(--line-strong)}
+.ccard[aria-pressed="true"]{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent)}
+.ccard>*{min-width:0}
+.ccard .name{display:flex;align-items:center;gap:8px;padding-right:34px;font-weight:700}
+.ccard .name .dot{width:11px;height:11px}
+.ccard .who{font-size:13px;color:var(--muted)}
+.ccard .now{font-size:13px;padding:8px 10px;border-radius:9px;background:var(--surface-2)}
+.ccard .now span{color:var(--muted)}
+.ccard .chips{display:flex;flex-wrap:wrap;gap:6px}
+.ccard .edit{position:absolute;top:10px;right:10px}
+.crew-plan{display:grid;gap:10px;margin-top:6px}
+.crew-plan-head{display:grid;gap:2px}
+.palette{display:flex;flex-wrap:wrap;gap:8px}
+.palette button{width:32px;height:32px;border-radius:9px;border:2px solid transparent;cursor:pointer}
+.palette button[aria-pressed="true"]{border-color:var(--ink);box-shadow:inset 0 0 0 2px var(--surface)}
+.cal-tip{font-size:12.5px;color:var(--muted);padding:0 2px}
+
+/* ── панель инструментов по группам ───────────────── */
+.tb-group{display:inline-flex;align-items:center;gap:8px;flex-wrap:wrap}
+.tb-right{margin-left:auto}
+.tool.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.tool.primary:hover{filter:brightness(1.05)}
+@media (max-width:760px){.tb-group{flex-wrap:nowrap}.tb-right{margin-left:0}}
+.obj-progress{max-width:520px;margin-top:4px}
+.obj-progress .bar{height:6px}
+
+/* ── сводка «сегодня» над объектами ────────────────── */
+.today-bar{display:grid;gap:10px;grid-template-columns:repeat(auto-fit,minmax(170px,1fr))}
+.tile{display:grid;gap:2px;padding:12px 14px;border:1px solid var(--line);border-radius:14px;background:var(--surface);text-align:left;
+  cursor:default}
+.tile b{font-family:var(--mono);font-size:22px;line-height:1.1}
+.tile span{font-size:13px;color:var(--muted)}
+.tile small{font-size:12.5px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+button.tile{cursor:pointer}
+button.tile:hover{border-color:var(--accent)}
+.tile.bad b{color:var(--bad)}
+.tile.ok b{color:var(--ok)}
+.ocard{align-content:start}
+.ocard .chips,.ccard .chips{align-items:flex-start}
+.nw{white-space:nowrap}
+@media (max-width:760px){
+  .crew-grid{display:flex;overflow-x:auto;gap:10px;scroll-snap-type:x mandatory;padding:2px 2px 6px;margin:0 -2px;scrollbar-width:none}
+  .crew-grid::-webkit-scrollbar{display:none}
+  .ccard{flex:0 0 80%;scroll-snap-align:start}
+}

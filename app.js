@@ -4,7 +4,7 @@
   'use strict';
 
   var DAY = 864e5;
-  var STORE_KEY = 'ds-gpr-demo-1';
+  var STORE_KEY = 'ds-gpr-demo-2';
   var PREFS_KEY = 'ds-gpr-prefs-1';
   var MOBILE = window.matchMedia('(max-width: 760px)');
 
@@ -48,7 +48,7 @@
   var store, prefs;
   function loadStore() {
     try { store = JSON.parse(localStorage.getItem(STORE_KEY) || 'null'); } catch (e) { store = null; }
-    if (!store || store.v !== 1) store = window.GPR_DEMO.demo();
+    if (!store || store.v !== 2) store = window.GPR_DEMO.demo();
     try { prefs = JSON.parse(localStorage.getItem(PREFS_KEY) || 'null') || {}; } catch (e) { prefs = {}; }
     prefs.zoom = prefs.zoom || 'day';
     if (prefs.mats === undefined) prefs.mats = true;
@@ -110,12 +110,39 @@
         '<div><div class="row" style="margin-bottom:6px"><span>Готово</span><b>' + pct(s.progress) + '</b></div>' +
         '<div class="bar"><i style="width:' + Math.round(s.progress * 100) + '%"></i></div></div>' +
         '<div class="row"><span class="muted">Сдача по графику</span><b>' + dmy(addDays(s.end, -1)) + '</b></div>' +
-        '<div class="row">' + lagHtml + (s.late.length ? '<span class="chip bad">просрочено: ' + s.late.length + '</span>' : '') +
+        '<div class="chips">' + lagHtml + (s.late.length ? '<span class="chip bad">просрочено работ: ' + s.late.length + '</span>' : '') +
         (s.soon.length ? '<span class="chip work">поставок на неделе: ' + s.soon.length + '</span>' : '') + '</div>' + now);
       card.addEventListener('click', function () { openObject(obj.id); });
       grid.appendChild(card);
     });
-    $('#objSummary').textContent = 'В работе: ' + counts.work + ' · планируется: ' + counts.plan + ' · сдано: ' + counts.done;
+    $('#objSummary').textContent = 'в работе: ' + counts.work + ', планируется: ' + counts.plan + ', сдано: ' + counts.done;
+    paintTodayBar();
+  }
+
+  // что происходит сегодня на всех объектах
+  function paintTodayBar() {
+    var now = today(), going = [], late = [], soon = 0;
+    store.objects.forEach(function (o) {
+      var st = objStats(o);
+      st.current.forEach(function (t) { going.push({ o: o, t: t }); });
+      st.late.forEach(function (t) { late.push({ o: o, t: t }); });
+      soon += st.soon.length;
+    });
+    var load = crewLoad(), clash = 0, clashCrew = null;
+    Object.keys(load).forEach(function (k) { if (load[k].conflicts.length) { clash += load[k].conflicts.length; clashCrew = clashCrew || k; } });
+    var bar = $('#todayBar'); bar.innerHTML = '';
+    function tile(cls, num, label, sub, onClick) {
+      var d = el(onClick ? 'button' : 'div', 'tile ' + cls);
+      if (onClick) { d.type = 'button'; d.addEventListener('click', onClick); }
+      d.innerHTML = '<b>' + num + '</b><span>' + label + '</span>' + (sub ? '<small>' + esc(sub) + '</small>' : '');
+      bar.appendChild(d);
+    }
+    tile('', going.length, 'работ идёт сегодня, ' + dm(now), going[0] ? going[0].t.text + ' · ' + going[0].o.address : '');
+    tile(late.length ? 'bad' : 'ok', late.length, 'просрочено работ', late[0] ? late[0].t.text + ' · ' + late[0].o.address : 'всё в срок',
+      late[0] ? function () { openObject(late[0].o.id, late[0].t.id); } : null);
+    tile('', soon, 'поставок на этой неделе', '');
+    tile(clash ? 'bad' : 'ok', clash, 'пересечений бригад', clash ? 'бригада нужна в двух местах' : 'нет',
+      clash ? function () { crewSel = clashCrew; go('crews'); } : null);
   }
 
   function go(to) {
@@ -207,7 +234,7 @@
       { name: 'progress', label: '%', width: 50, align: 'center', template: function (t) {
         return t.kind === 'material' ? (t.status === 'done' ? '✓' : '') : '<span class="cell-pct">' + pct(t.progress) + '</span>'; } },
       { name: 'dev', label: 'Откл.', width: 54, align: 'center', template: devCell },
-      { name: 'add', label: '', width: 38, align: 'center', template: function (t) {
+      { name: 'plus', label: '', width: 38, align: 'center', template: function (t) {
         return t.kind === 'material' ? '' : '<button class="cell-add" data-act="add" type="button" aria-label="Добавить работу">+</button>'; } }
     ];
   }
@@ -331,7 +358,7 @@
           rows.push('<br><span class="k">По плану:</span> ' + dmy(parse(task.plan_start)) + ' — ' + dmy(addDays(parse(task.plan_end), -1)) +
             (d ? ' <b style="display:inline;color:var(' + (d > 0 ? '--bad' : '--ok') + ')">' + (d > 0 ? '+' : '−') + days(Math.abs(d)) + '</b>' : ''));
         }
-        if (task.$objTitle) rows.push('<br><span class="k">Объект:</span> ' + esc(task.$objTitle));
+        if (task.objTitle) rows.push('<br><span class="k">Объект:</span> ' + esc(task.objTitle));
       }
       rows.push('</div>');
       return rows.join('');
@@ -339,14 +366,14 @@
 
     gantt.attachEvent('onBeforeLightbox', function (id) { openTaskEditor(id); return false; });
     gantt.attachEvent('onTaskDblClick', function (id) {
-      if (mode === 'crew') { jumpFromCrew(id); return false; }
+      if (mode === 'crew') { openCrewWork(id); return false; }
       if (id) openTaskEditor(id);
       return false;
     });
     gantt.attachEvent('onTaskClick', function (id, e) {
       var act = e.target.closest && e.target.closest('[data-act]');
       if (mode === 'crew') {
-        if (e.target.closest('.gantt_task_line') || e.target.closest('.gantt_row')) jumpFromCrew(id);
+        if (e.target.closest('.gantt_task_line') || e.target.closest('.gantt_row')) openCrewWork(id);
         return false;
       }
       if (act) { cellAction(id, act.dataset.act, act); return false; }
@@ -400,6 +427,7 @@
       return true;
     });
     gantt.attachEvent('onAfterLinkAdd', function (id, link) {
+      if (silentLink || busy) return;
       var n = cascade(link.source);
       syncStore();
       toast('«' + gantt.getTask(link.target).text + '» теперь после «' + gantt.getTask(link.source).text + '»' +
@@ -433,7 +461,7 @@
     MOBILE.addEventListener('change', function () {
       gantt.config.columns = mode === 'crew' ? crewColumns() : objectColumns();
       applyLayout(mode);
-      paintHint();
+      paintTips();
       gantt.render();
     });
     window.addEventListener('resize', function () { if (ganttReady) gantt.setSizes(); });
@@ -614,7 +642,7 @@
     var host = $('#vObject .gantt-wrap');
     if ($('#gantt').parentNode !== host) host.appendChild($('#gantt'));
     $('#showMats').checked = !!prefs.mats;
-    paintHint();
+    paintTips();
     paintLegend();
     window.scrollTo(0, 0);
     if (!ganttReady) setupGantt();
@@ -648,6 +676,7 @@
     $('#oAddress').innerHTML = esc(currentObj.address) + ' · <span class="chip ' + st[0] + '">' + st[1] + '</span>' +
       (currentObj.baselineAt ? ' · <span>план зафиксирован ' + dmy(parse(currentObj.baselineAt)) + '</span>' : ' · <span>план не зафиксирован</span>');
     var s = objStats(currentObj);
+    $('#oBar').style.width = Math.round((s.progress || 0) * 100) + '%';
     var box = $('#oStats'); box.innerHTML = '';
     if (s.empty) { box.innerHTML = '<div class="stat"><span>Работ</span><b>0</b></div>'; return; }
     var items = [
@@ -666,11 +695,20 @@
     });
   }
 
-  function paintHint() {
-    $('#hintLine').textContent = MOBILE.matches
-      ? 'Нажмите на работу, чтобы поменять сроки, бригаду или готовность. Чтобы перетащить полоску, задержите на ней палец.'
-      : 'Тяните полоску — сдвинуть работу, за край — изменить срок, за кружок на краю — связать с другой работой. ' +
-        'Нажмите на название, чтобы переименовать, на полоску — чтобы открыть подробности.';
+  var ICON = {
+    move: '<svg viewBox="0 0 24 24"><path d="M4 12h16M8 8l-4 4 4 4M16 8l4 4-4 4"/></svg>',
+    edge: '<svg viewBox="0 0 24 24"><path d="M5 5v14M19 12H9M15 8l4 4-4 4"/></svg>',
+    link: '<svg viewBox="0 0 24 24"><circle cx="5.5" cy="12" r="2.5"/><circle cx="18.5" cy="12" r="2.5"/><path d="M8 12h8"/></svg>',
+    tap: '<svg viewBox="0 0 24 24"><path d="M9 11V5.5a2 2 0 1 1 4 0V11m0-1.5a2 2 0 1 1 4 0V13a6 6 0 0 1-6 6h-.5a5 5 0 0 1-4.3-2.5L4.3 13a1.6 1.6 0 0 1 2.8-1.6L9 14"/></svg>',
+    hold: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><circle cx="12" cy="12" r="8"/></svg>'
+  };
+  function paintTips() {
+    var tips = MOBILE.matches
+      ? [[ICON.tap, 'Нажмите на работу', ' — сроки, бригада, готовность'], [ICON.hold, 'Задержите палец', ' на полоске — перетащить']]
+      : [[ICON.move, 'Тяните полоску', ' — сдвинуть работу'], [ICON.edge, 'Тяните край', ' — изменить срок'],
+         [ICON.link, 'Кружок на краю', ' → на другую работу — связать'], [ICON.tap, 'Нажмите на полоску', ' — подробности']];
+    $('#tips').innerHTML = tips.map(function (t) { return '<span>' + t[0] + '<span><b>' + t[1] + '</b>' + t[2] + '</span></span>'; }).join('') +
+      '<button class="link" type="button" data-help>Как пользоваться</button>';
   }
   function paintLegend() {
     $('#legend').innerHTML =
@@ -715,7 +753,7 @@
         pushUndo(); t.start_date = s; t.end_date = new Date(s); markMoved(t); gantt.updateTask(id); syncStore();
       }, true);
     } else if (act === 'add') {
-      addTaskNear(id);
+      openNewTask(id);
     }
   }
   function applyDates(id, s, e) {
@@ -1040,31 +1078,157 @@
     setTimeout(function () { if (isNew) name.focus(); }, 30);
   }
 
-  function addTaskNear(refId) {
-    var ref = refId && gantt.isTaskExists(refId) ? gantt.getTask(refId) : null;
-    var parent = 0, index;
-    if (ref && ref.type === 'project') { parent = ref.id; index = gantt.getChildren(ref.id).length; }
-    else if (ref) { parent = ref.parent; index = gantt.getTaskIndex(ref.id) + 1; }
-    else {
-      var groups = gantt.getChildren(0).filter(function (x) { return gantt.getTask(x).type === 'project'; });
-      if (groups.length) { parent = groups[groups.length - 1]; index = gantt.getChildren(parent).length; }
-    }
-    var start = ref && ref.type !== 'project' ? new Date(ref.end_date) : today();
-    pushUndo();
-    var id = gantt.addTask({ id: uid('t'), text: 'Новая работа', start_date: start, duration: 3, progress: 0, kind: 'work', crew: '' }, parent, index);
-    syncStore();
-    gantt.selectTask(id); gantt.showTask(id);
-    openTaskEditor(id);
-    setTimeout(function () { var i = $('#mBody .inp'); if (i) { i.focus(); i.select(); } }, 40);
+  function stageList() {
+    var list = [];
+    gantt.eachTask(function (t) { if (t.type === 'project') list.push({ v: t.id, l: t.text }); });
+    return list;
   }
-  function addGroup() {
-    pushUndo();
-    var gid = uid('g');
-    gantt.addTask({ id: gid, text: 'Новый этап', type: 'project', kind: 'group', start_date: today(), duration: 1, progress: 0 }, 0);
-    var tid = gantt.addTask({ id: uid('t'), text: 'Новая работа', start_date: today(), duration: 3, progress: 0, kind: 'work', crew: '' }, gid);
-    syncStore();
-    gantt.showTask(tid);
-    openGroupEditor(gid);
+  function worksOf(stageId) {
+    var list = [];
+    gantt.eachTask(function (t) { if (t.kind !== 'material' && t.type !== 'project') list.push(t); }, stageId || 0);
+    return list;
+  }
+  // новая работа: этап, после какой работы, сроки, бригада
+  function openNewTask(refId) {
+    var ref = refId && gantt.isTaskExists(refId) ? gantt.getTask(refId) : null;
+    if (ref && ref.kind === 'material') ref = gantt.getTask(ref.work);
+    var stages = stageList();
+    if (!stages.length) { openNewStage(); return; }
+    var draft = { text: '', crew: '', stage: null, pred: '' };
+    draft.stage = ref ? (ref.type === 'project' ? ref.id : ref.parent) : stages[stages.length - 1].v;
+    var inStage = worksOf(draft.stage);
+    var predTask = ref && ref.type !== 'project' ? ref : inStage[inStage.length - 1] || null;
+    draft.pred = predTask ? predTask.id : '';
+    draft.start = predTask ? new Date(predTask.end_date) : today();
+    draft.end = addDays(draft.start, 2);
+
+    var body = el('div'); body.style.display = 'contents';
+    var f1 = field('Название работы'); var name = el('input', 'inp'); name.placeholder = 'Например: Монтаж забора'; name.maxLength = 120;
+    f1.appendChild(name); body.appendChild(f1);
+    var r1 = el('div', 'two');
+    var f2 = field('Этап'); var stageBtn = pickBtn('', chevron()); f2.appendChild(stageBtn); r1.appendChild(f2);
+    var f3 = field('Начинается после'); var predBtn = pickBtn('', chevron()); f3.appendChild(predBtn); r1.appendChild(f3);
+    body.appendChild(r1);
+    var r2 = el('div', 'two');
+    var f4 = field('Сроки'); var datesBtn = pickBtn('', calIcon()); f4.appendChild(datesBtn); r2.appendChild(f4);
+    var f5 = field('Бригада'); var crewBtn = pickBtn('', chevron()); f5.appendChild(crewBtn); r2.appendChild(f5);
+    body.appendChild(r2);
+    body.appendChild(el('p', 'muted', 'Если выбрать «Начинается после», работа встанет сразу за ней и будет сдвигаться вместе с ней.'));
+    function paint() {
+      stageBtn.querySelector('.v').textContent = gantt.getTask(draft.stage).text;
+      predBtn.querySelector('.v').textContent = draft.pred ? gantt.getTask(draft.pred).text : 'Ни после чего — по дате';
+      datesBtn.querySelector('.v').textContent = dmy(draft.start) + ' – ' + dmy(draft.end) + ' · ' + days(diffDays(draft.end, draft.start) + 1);
+      var c = crewById(draft.crew);
+      crewBtn.querySelector('.v').innerHTML = c ? '<span class="dot" style="background:' + c.color + '"></span> ' + esc(c.name) : '<span class="muted">Без бригады</span>';
+    }
+    paint();
+    stageBtn.addEventListener('click', function () {
+      openList(stageBtn, stageList(), draft.stage, function (v) {
+        draft.stage = v;
+        var ws = worksOf(v);
+        if (draft.pred && String(gantt.getTask(draft.pred).parent) !== String(v)) {
+          draft.pred = ws.length ? ws[ws.length - 1].id : '';
+          if (draft.pred) { var len = diffDays(draft.end, draft.start); draft.start = new Date(gantt.getTask(draft.pred).end_date); draft.end = addDays(draft.start, len); }
+        }
+        paint();
+      });
+    });
+    predBtn.addEventListener('click', function () {
+      var opts = [{ v: '', l: 'Ни после чего — по дате' }];
+      stages.forEach(function (st) {
+        worksOf(st.v).forEach(function (w) { opts.push({ v: w.id, l: st.l + ' → ' + w.text }); });
+      });
+      openList(predBtn, opts, draft.pred, function (v) {
+        draft.pred = v;
+        if (v) { var len = diffDays(draft.end, draft.start); draft.start = new Date(gantt.getTask(v).end_date); draft.end = addDays(draft.start, len); }
+        paint();
+      });
+    });
+    datesBtn.addEventListener('click', function () {
+      openRange(datesBtn, draft.start, draft.end, function (s2, e2) { draft.start = s2; draft.end = e2; paint(); });
+    });
+    crewBtn.addEventListener('click', function () { openList(crewBtn, crewOptions(true), draft.crew, function (v) { draft.crew = v; paint(); }); });
+
+    var cancel = el('button', 'btn ghost', 'Отмена'); cancel.type = 'button'; cancel.addEventListener('click', closeModal);
+    var save = el('button', 'btn', 'Добавить работу'); save.type = 'button';
+    save.addEventListener('click', function () {
+      var title = name.value.trim();
+      if (!title) { name.focus(); toast('Напишите, какая работа'); return; }
+      pushUndo();
+      var index = gantt.getChildren(draft.stage).length;
+      if (draft.pred && String(gantt.getTask(draft.pred).parent) === String(draft.stage)) {
+        var sib = gantt.getChildren(draft.stage);
+        index = sib.indexOf(draft.pred) + 1;
+        while (index < sib.length && gantt.getTask(sib[index]).kind === 'material' && String(gantt.getTask(sib[index]).work) === String(draft.pred)) index++;
+      }
+      var id = gantt.addTask({ id: uid('t'), text: title, start_date: draft.start, duration: diffDays(draft.end, draft.start) + 1,
+        progress: 0, kind: 'work', crew: draft.crew }, draft.stage, index);
+      if (draft.pred) {
+        silentLink = true;
+        gantt.addLink({ id: uid('l'), source: draft.pred, target: id, type: '0' });
+        silentLink = false;
+        cascade(draft.pred);
+      }
+      closeModal(); syncStore();
+      gantt.selectTask(id); gantt.showTask(id);
+      toast('Работа «' + title + '» добавлена', 'Отменить', undo);
+    });
+    openModal('Новая работа', body, [cancel, save]);
+    setTimeout(function () { name.focus(); }, 30);
+  }
+  var silentLink = false;
+
+  // новый этап: где стоит и первая работа в нём
+  function openNewStage() {
+    var stages = stageList();
+    var draft = { after: stages.length ? stages[stages.length - 1].v : '', crew: '' };
+    draft.start = draft.after ? new Date(gantt.getTask(draft.after).end_date) : today();
+    draft.end = addDays(draft.start, 2);
+    var body = el('div'); body.style.display = 'contents';
+    var f1 = field('Название этапа'); var name = el('input', 'inp'); name.placeholder = 'Например: Благоустройство'; name.maxLength = 80;
+    f1.appendChild(name); body.appendChild(f1);
+    var f2 = field('Поставить после этапа'); var afterBtn = pickBtn('', chevron()); f2.appendChild(afterBtn); body.appendChild(f2);
+    var f3 = field('Первая работа этапа'); var work = el('input', 'inp'); work.placeholder = 'Например: Монтаж забора'; work.maxLength = 120;
+    f3.appendChild(work); body.appendChild(f3);
+    var r = el('div', 'two');
+    var f4 = field('Сроки первой работы'); var datesBtn = pickBtn('', calIcon()); f4.appendChild(datesBtn); r.appendChild(f4);
+    var f5 = field('Бригада'); var crewBtn = pickBtn('', chevron()); f5.appendChild(crewBtn); r.appendChild(f5);
+    body.appendChild(r);
+    function paint() {
+      afterBtn.querySelector('.v').textContent = draft.after ? gantt.getTask(draft.after).text : 'В самое начало';
+      datesBtn.querySelector('.v').textContent = dmy(draft.start) + ' – ' + dmy(draft.end) + ' · ' + days(diffDays(draft.end, draft.start) + 1);
+      var c = crewById(draft.crew);
+      crewBtn.querySelector('.v').innerHTML = c ? '<span class="dot" style="background:' + c.color + '"></span> ' + esc(c.name) : '<span class="muted">Без бригады</span>';
+    }
+    paint();
+    afterBtn.addEventListener('click', function () {
+      openList(afterBtn, [{ v: '', l: 'В самое начало' }].concat(stageList()), draft.after, function (v) {
+        draft.after = v;
+        var len = diffDays(draft.end, draft.start);
+        draft.start = v ? new Date(gantt.getTask(v).end_date) : today(); draft.end = addDays(draft.start, len);
+        paint();
+      });
+    });
+    datesBtn.addEventListener('click', function () { openRange(datesBtn, draft.start, draft.end, function (s2, e2) { draft.start = s2; draft.end = e2; paint(); }); });
+    crewBtn.addEventListener('click', function () { openList(crewBtn, crewOptions(true), draft.crew, function (v) { draft.crew = v; paint(); }); });
+    var cancel = el('button', 'btn ghost', 'Отмена'); cancel.type = 'button'; cancel.addEventListener('click', closeModal);
+    var save = el('button', 'btn', 'Добавить этап'); save.type = 'button';
+    save.addEventListener('click', function () {
+      var title = name.value.trim(), first = work.value.trim();
+      if (!title) { name.focus(); toast('Напишите название этапа'); return; }
+      if (!first) { work.focus(); toast('Напишите первую работу этапа'); return; }
+      pushUndo();
+      var roots = gantt.getChildren(0);
+      var index = draft.after ? roots.indexOf(draft.after) + 1 : 0;
+      var gid = gantt.addTask({ id: uid('g'), text: title, type: 'project', kind: 'group', start_date: draft.start, duration: 1, progress: 0 }, 0, index);
+      var tid = gantt.addTask({ id: uid('t'), text: first, start_date: draft.start, duration: diffDays(draft.end, draft.start) + 1,
+        progress: 0, kind: 'work', crew: draft.crew }, gid);
+      closeModal(); syncStore();
+      gantt.selectTask(tid); gantt.showTask(tid);
+      toast('Этап «' + title + '» добавлен', 'Отменить', undo);
+    });
+    openModal('Новый этап', body, [cancel, save]);
+    setTimeout(function () { name.focus(); }, 30);
   }
 
   // ── объект: создать, изменить, удалить ─────────────────────────────
@@ -1176,50 +1340,73 @@
     });
     return res;
   }
-  function openCrews() {
-    if (currentObj) syncStore();
+  function openCrews(scrollToPlan) {
+    if (currentObj && view === 'object') syncStore();
     var load = crewLoad();
-    if (!crewSel) {
+    var now = today();
+    if (!crewSel || !crewById(crewSel)) {
       crewSel = store.crews.filter(function (c) { return load[c.id].conflicts.length; })[0];
-      crewSel = crewSel ? crewSel.id : store.crews[0].id;
+      crewSel = crewSel ? crewSel.id : (store.crews[0] && store.crews[0].id);
     }
-    var chips = $('#crewChips'); chips.innerHTML = '';
+    var grid = $('#crewGrid'); grid.innerHTML = '';
     store.crews.forEach(function (c) {
-      var b = el('button', 'crew-chip'); b.type = 'button';
-      b.setAttribute('aria-pressed', c.id === crewSel ? 'true' : 'false');
-      var active = load[c.id].works.filter(function (x) { return (x.t.progress || 0) < 1; }).length;
-      b.innerHTML = '<span class="dot" style="background:' + c.color + '"></span>' + esc(c.name) +
-        ' <span class="n">' + active + '</span>' + (load[c.id].conflicts.length ? ' <span class="warn">⚠ ' + load[c.id].conflicts.length + '</span>' : '');
-      b.addEventListener('click', function () { crewSel = c.id; openCrews(); });
-      chips.appendChild(b);
+      var L = load[c.id] || { works: [], conflicts: [] };
+      var open = L.works.filter(function (x) { return (x.t.progress || 0) < 1; }).sort(function (a, b) { return a.s - b.s; });
+      var cur = open.filter(function (x) { return x.s <= now && x.e > now; })[0];
+      var next = open.filter(function (x) { return x.s > now; })[0];
+      var card = el('div', 'ccard');
+      card.tabIndex = 0;
+      card.setAttribute('role', 'button');
+      card.setAttribute('aria-pressed', c.id === crewSel ? 'true' : 'false');
+      card.innerHTML =
+        '<div class="name"><span class="dot" style="background:' + c.color + '"></span>' + esc(c.name) + '</div>' +
+        '<div class="who">' + (c.lead ? 'Бригадир: ' + esc(c.lead) : 'Бригадир не указан') + (c.phone ? ' · <span class="nw">' + esc(c.phone) + '</span>' : '') + '</div>' +
+        '<div class="now">' + (cur ? '<span>Сейчас:</span> ' + esc(cur.t.text) + ' · ' + esc(cur.obj.address) : '<span>Сейчас свободна</span>') +
+        (next ? '<br><span>Дальше:</span> ' + esc(next.t.text) + ' с ' + dm(next.s) : '') + '</div>' +
+        '<div class="chips"><span class="chip plan">работ впереди: ' + open.length + '</span>' +
+        (L.conflicts.length ? '<span class="chip bad">⚠ нужна в двух местах: ' + L.conflicts.length + '</span>' : '') + '</div>';
+      var edit = el('button', 'icon-btn sm edit'); edit.type = 'button'; edit.setAttribute('aria-label', 'Изменить бригаду ' + c.name);
+      edit.innerHTML = '<svg viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16v4Z"/><path d="m13.5 6.5 4 4"/></svg>';
+      edit.addEventListener('click', function (e) { e.stopPropagation(); openCrewEditor(c); });
+      card.appendChild(edit);
+      function pick() { crewSel = c.id; openCrews(true); }
+      card.addEventListener('click', pick);
+      card.addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); pick(); } });
+      grid.appendChild(card);
     });
+    var crew = crewById(crewSel);
+    $('#crewPlanTitle').textContent = crew ? 'Работы: ' + crew.name : 'Бригад пока нет';
     var cf = $('#conflicts'); cf.innerHTML = '';
-    var mine = load[crewSel].conflicts;
-    if (!mine.length) cf.innerHTML = '<div class="ok-line">Пересечений нет: бригада не нужна в двух местах одновременно.</div>';
+    var mine = crew ? load[crewSel].conflicts : [];
+    if (crew && !mine.length) cf.innerHTML = '<div class="ok-line">Пересечений нет: бригада не нужна в двух местах одновременно.</div>';
     mine.forEach(function (p) {
       var a = p[0], b = p[1];
-      var s = new Date(Math.max(a.s, b.s)), e = addDays(new Date(Math.min(a.e, b.e)), -1);
+      var s0 = new Date(Math.max(a.s, b.s)), e0 = addDays(new Date(Math.min(a.e, b.e)), -1);
       var d = el('div', 'conflict');
-      d.innerHTML = '<span>⚠ ' + dm(s) + '–' + dm(e) + '</span><span><b>' + esc(a.t.text) + '</b> · ' + esc(a.obj.address) +
+      d.innerHTML = '<span>⚠ ' + dm(s0) + '–' + dm(e0) + ' нужна в двух местах:</span><span><b>' + esc(a.t.text) + '</b> · ' + esc(a.obj.address) +
         '</span><span>и</span><span><b>' + esc(b.t.text) + '</b> · ' + esc(b.obj.address) + '</span>';
       cf.appendChild(d);
     });
 
-    // график бригады: этапы — объекты, внутри — работы бригады
     var conflictIds = {};
     mine.forEach(function (p) { conflictIds[p[0].obj.id + '|' + p[0].t.id] = 1; conflictIds[p[1].obj.id + '|' + p[1].t.id] = 1; });
     var data = [];
     store.objects.forEach(function (o) {
-      var ws = load[crewSel].works.filter(function (x) { return x.obj.id === o.id; });
+      var ws = crew ? load[crewSel].works.filter(function (x) { return x.obj.id === o.id; }) : [];
       if (!ws.length) return;
-      data.push({ id: 'X' + o.id, text: o.title + ' · ' + o.address, type: 'project', kind: 'group', open: true, start_date: iso(ws[0].s), duration: 1, progress: 0 });
+      data.push({ id: 'X' + o.id, text: MOBILE.matches ? o.address : o.title + ' · ' + o.address, type: 'project', kind: 'group', open: true, start_date: iso(ws[0].s), duration: 1, progress: 0 });
       ws.forEach(function (x) {
         data.push({ id: 'X' + o.id + '|' + x.t.id, parent: 'X' + o.id, text: x.t.text, start_date: x.t.start, duration: x.t.duration,
-          progress: x.t.progress || 0, kind: 'work', crew: crewSel, $objTitle: o.title, $obj: o.id, $task: x.t.id,
+          progress: x.t.progress || 0, kind: 'work', crew: crewSel, objTitle: o.title, objId: o.id, taskId: x.t.id,
           conflict: !!conflictIds[o.id + '|' + x.t.id] });
       });
     });
     var host = $('#crewWrap');
+    var empty = $('#crewEmpty');
+    if (!empty) { empty = el('p', 'muted'); empty.id = 'crewEmpty'; host.parentNode.insertBefore(empty, host); }
+    empty.textContent = 'У бригады пока нет работ. Назначить её можно в окне работы на графике объекта.';
+    empty.hidden = !!data.length;
+    host.hidden = !data.length;
     if (!ganttReady) setupGantt();
     if ($('#gantt').parentNode !== host) host.appendChild($('#gantt'));
     mode = 'crew';
@@ -1228,15 +1415,189 @@
     applyLayout('crew');
     gantt.clearAll();
     gantt.parse({ data: data, links: [] });
-    addTodayMarker();
     gantt.render();
     gantt.setSizes();
     gantt.showDate(today());
+    if (scrollToPlan) $('.crew-plan').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    var sel = $('.ccard[aria-pressed="true"]');
+    if (sel && MOBILE.matches) $('#crewGrid').scrollLeft = sel.offsetLeft - 12;
   }
-  function jumpFromCrew(id) {
-    var t = gantt.getTask(id);
-    if (!t.$obj) return;
-    openObject(t.$obj, t.$task);
+
+  // окно работы бригады — правим прямо здесь, без перехода в объект
+  function openCrewWork(id) {
+    if (!gantt.isTaskExists(id)) return;
+    var g = gantt.getTask(id);
+    if (!g.objId) return;
+    var obj = objById(g.objId);
+    var t = obj && obj.tasks.filter(function (x) { return x.id === g.taskId; })[0];
+    if (!t) return;
+    var draft = { text: t.text, start: parse(t.start), end: addDays(parse(t.start), Math.max(1, t.duration) - 1),
+      crew: t.crew || '', progress: t.progress || 0, note: t.note || '' };
+    var body = el('div'); body.style.display = 'contents';
+    var info = el('div', 'plan-note');
+    info.innerHTML = 'Объект: <b style="font-family:var(--body)">' + esc(obj.title) + '</b> · ' + esc(obj.address);
+    body.appendChild(info);
+    var f1 = field('Название работы'); var name = el('input', 'inp'); name.value = draft.text; f1.appendChild(name); body.appendChild(f1);
+    var r = el('div', 'two');
+    var f2 = field('Сроки'); var datesBtn = pickBtn('', calIcon()); f2.appendChild(datesBtn); r.appendChild(f2);
+    var f3 = field('Бригада'); var crewBtn = pickBtn('', chevron()); f3.appendChild(crewBtn); r.appendChild(f3);
+    body.appendChild(r);
+    function paint() {
+      datesBtn.querySelector('.v').textContent = dmy(draft.start) + ' – ' + dmy(draft.end) + ' · ' + days(diffDays(draft.end, draft.start) + 1);
+      var c = crewById(draft.crew);
+      crewBtn.querySelector('.v').innerHTML = c ? '<span class="dot" style="background:' + c.color + '"></span> ' + esc(c.name) : '<span class="muted">Без бригады</span>';
+    }
+    paint();
+    datesBtn.addEventListener('click', function () { openRange(datesBtn, draft.start, draft.end, function (s2, e2) { draft.start = s2; draft.end = e2; paint(); }); });
+    crewBtn.addEventListener('click', function () { openList(crewBtn, crewOptions(true), draft.crew, function (v) { draft.crew = v; paint(); }); });
+    var f4 = field('Готовность');
+    var pr = el('div', 'pct-row');
+    var range = el('input', 'range'); range.type = 'range'; range.min = 0; range.max = 100; range.step = 5; range.value = Math.round(draft.progress * 100);
+    var pv = el('b', '', pct(draft.progress));
+    range.addEventListener('input', function () { draft.progress = range.value / 100; pv.textContent = range.value + '%'; });
+    pr.appendChild(range); pr.appendChild(pv); f4.appendChild(pr); body.appendChild(f4);
+    var f5 = field('Комментарий'); var note = el('textarea', 'inp'); note.value = draft.note; f5.appendChild(note); body.appendChild(f5);
+    body.appendChild(el('p', 'muted', 'Если работа сдвинется, следующие за ней работы на этом объекте сдвинутся сами.'));
+
+    var toObj = el('button', 'btn ghost left', 'График объекта →'); toObj.type = 'button';
+    toObj.addEventListener('click', function () { closeModal(); openObject(obj.id, t.id); });
+    var cancel = el('button', 'btn ghost', 'Отмена'); cancel.type = 'button'; cancel.addEventListener('click', closeModal);
+    var save = el('button', 'btn', 'Сохранить'); save.type = 'button';
+    save.addEventListener('click', function () {
+      var shift = diffDays(draft.start, parse(t.start));
+      var moved = draft.crew !== (t.crew || '');
+      t.text = name.value.trim() || t.text;
+      t.start = iso(draft.start);
+      t.duration = diffDays(draft.end, draft.start) + 1;
+      t.progress = draft.progress;
+      t.crew = draft.crew;
+      t.note = note.value.trim();
+      storeShiftMaterials(obj, t.id, shift);
+      var n = storeCascade(obj, t.id);
+      saveStore(); closeModal(); openCrews();
+      toast(moved ? 'Работа передана: ' + (crewById(draft.crew) ? crewById(draft.crew).name : 'без бригады')
+        : 'Сохранено' + (n ? ' · на объекте сдвинуто работ: ' + n : ''));
+    });
+    openModal('Работа бригады', body, [toObj, cancel, save]);
+  }
+  // то же правило «следующая — не раньше конца предыдущей», но прямо в данных объекта
+  function storeCascade(obj, id) {
+    var byId = {}; obj.tasks.forEach(function (x) { byId[x.id] = x; });
+    var moved = {};
+    (function walk(src) {
+      var a = byId[src]; if (!a) return;
+      var aEnd = endOf(a);
+      obj.links.forEach(function (l) {
+        if (l.source !== src || !byId[l.target]) return;
+        var b = byId[l.target];
+        if (parse(b.start) < aEnd) {
+          var delta = diffDays(aEnd, parse(b.start));
+          b.start = iso(aEnd);
+          storeShiftMaterials(obj, b.id, delta);
+          moved[b.id] = 1;
+          walk(b.id);
+        }
+      });
+    })(id);
+    return Object.keys(moved).length;
+  }
+  function storeShiftMaterials(obj, workId, delta) {
+    if (!delta) return;
+    obj.tasks.forEach(function (m) { if (m.kind === 'material' && m.work === workId) m.start = iso(addDays(parse(m.start), delta)); });
+  }
+
+  // справочник бригад: название, бригадир, телефон, цвет
+  var PALETTE = ['#C8891A', '#B86B2E', '#9C4F43', '#8C6E54', '#6E7F3E', '#4E8A5E', '#2F8F8A', '#3A7CA5', '#4F7D99', '#6A5FA8', '#A0527A', '#7C8A96'];
+  function openCrewEditor(crew) {
+    var isNew = !crew;
+    var draft = { name: crew ? crew.name : '', lead: crew ? crew.lead || '' : '', phone: crew ? crew.phone || '' : '',
+      color: crew ? crew.color : PALETTE[store.crews.length % PALETTE.length] };
+    var body = el('div'); body.style.display = 'contents';
+    var f1 = field('Название'); var name = el('input', 'inp'); name.value = draft.name; name.placeholder = 'Например: Бригада №3 · фасад';
+    f1.appendChild(name); body.appendChild(f1);
+    var r = el('div', 'two');
+    var f2 = field('Бригадир'); var lead = el('input', 'inp'); lead.value = draft.lead; lead.placeholder = 'Имя и фамилия'; f2.appendChild(lead); r.appendChild(f2);
+    var f3 = field('Телефон'); var phone = el('input', 'inp'); phone.value = draft.phone; phone.inputMode = 'tel'; phone.placeholder = '+7 ...'; f3.appendChild(phone); r.appendChild(f3);
+    body.appendChild(r);
+    var f4 = field('Цвет на графике'); var pal = el('div', 'palette');
+    var sw = PALETTE.map(function (c) {
+      var b = el('button'); b.type = 'button'; b.style.background = c; b.setAttribute('aria-label', 'Цвет ' + c);
+      b.addEventListener('click', function () { draft.color = c; paintPal(); });
+      pal.appendChild(b); return [c, b];
+    });
+    function paintPal() { sw.forEach(function (x) { x[1].setAttribute('aria-pressed', x[0] === draft.color ? 'true' : 'false'); }); }
+    paintPal(); f4.appendChild(pal); body.appendChild(f4);
+    var foot = [];
+    if (!isNew) {
+      var del = el('button', 'btn danger left', 'Удалить'); del.type = 'button';
+      del.addEventListener('click', function () {
+        confirmBox('Удалить бригаду «' + crew.name + '»? Её работы останутся на графиках, но без бригады.', 'Удалить').then(function (ok) {
+          if (!ok) return;
+          store.crews = store.crews.filter(function (c) { return c.id !== crew.id; });
+          store.objects.forEach(function (o) { o.tasks.forEach(function (t) { if (t.crew === crew.id) t.crew = ''; }); });
+          if (crewSel === crew.id) crewSel = null;
+          saveStore(); paintCrewColors(); openCrews(); toast('Бригада удалена');
+        });
+      });
+      foot.push(del);
+    }
+    var cancel = el('button', 'btn ghost', 'Отмена'); cancel.type = 'button'; cancel.addEventListener('click', closeModal);
+    var save = el('button', 'btn', isNew ? 'Добавить бригаду' : 'Сохранить'); save.type = 'button';
+    save.addEventListener('click', function () {
+      var n = name.value.trim();
+      if (!n) { name.focus(); toast('Напишите название бригады'); return; }
+      if (isNew) {
+        crew = { id: uid('c'), name: n, lead: lead.value.trim(), phone: phone.value.trim(), color: draft.color };
+        store.crews.push(crew); crewSel = crew.id;
+      } else {
+        crew.name = n; crew.lead = lead.value.trim(); crew.phone = phone.value.trim(); crew.color = draft.color;
+      }
+      saveStore(); paintCrewColors(); closeModal(); openCrews();
+      toast(isNew ? 'Бригада добавлена — назначьте её работам на графике объекта' : 'Сохранено');
+    });
+    foot.push(cancel, save);
+    openModal(isNew ? 'Новая бригада' : 'Бригада', body, foot);
+    setTimeout(function () { name.focus(); }, 30);
+  }
+
+  // ── «Как пользоваться» ─────────────────────────────────────────────
+  function openHelp() {
+    var body = el('div', 'help');
+    body.innerHTML = [
+      ['Объекты', ['Это список домов. <b>Нажмите на карточку</b> — откроется график работ этого дома.',
+        '<b>«+ Новый объект»</b> — создать график: выберите шаблон «Дом под ключ», «Коробка» или пустой. Работы из шаблона появятся сами, дальше их можно менять.',
+        'Значок карандаша рядом с названием объекта — изменить название, адрес, статус или удалить объект.']],
+      ['График объекта', ['Слева — работы по этапам, справа — те же работы полосками по дням. Красная линия — сегодня.',
+        '<b>Сдвинуть работу</b> — потяните полоску мышью. <b>Изменить срок</b> — потяните за левый или правый край. Работы, которые идут после неё, сдвинутся сами.',
+        '<b>Связать работы</b> — наведите на полоску и потяните кружок с её конца на начало другой работы. Или откройте работу → «Начинается после» → «+ добавить».',
+        '<b>Подробности</b> — нажмите на полоску: сроки через календарь, бригада, готовность, комментарий, поставки, удаление.',
+        '<b>Переименовать</b> — нажмите на название в таблице и напишите новое.',
+        '<b>Добавить</b> — «+ Работа» и «+ Этап» на панели или «+» в конце строки (новая работа встанет сразу после этой).',
+        '<b>Отменить</b> последнее действие — кнопка «↶ Отменить» или <span class="kbd">Ctrl+Z</span>.',
+        'Масштаб — «День», «Неделя», «Месяц». «Сегодня» — вернуться к текущей дате.']],
+      ['План и факт', ['Когда график согласован, нажмите <b>«Зафиксировать план»</b>.',
+        'Дальше под каждой полоской серая линия — как было по плану, красная над полоской — насколько работа опаздывает. В колонке «Откл.» и в шапке объекта — отставание в днях.']],
+      ['Бригады', ['Справочник бригад: бригадир, телефон, чем занята сейчас и что дальше. «+ Бригада» — добавить, карандаш — изменить.',
+        '<b>Нажмите на бригаду</b> — внизу появятся все её работы на всех объектах. Красным — если в одни дни она нужна в двух местах.',
+        '<b>Нажмите на работу</b> — можно поменять сроки, готовность или передать другой бригаде прямо там.']],
+      ['Поставки материалов', ['Ромбики на графике: <span class="swatch" style="background:var(--plan)"></span> не заказано, <span class="swatch" style="background:var(--accent)"></span> заказано, <span class="swatch" style="background:var(--ok)"></span> доставлено.',
+        '«+ Поставка» — добавить. Поставка привязана к работе и сдвигается вместе с ней. Переключатель «Материалы» прячет поставки.']],
+      ['Excel и печать', ['«Excel» — скачать график таблицей по неделям и список поставок. «Печать» — график на листе А4 для планёрки.']],
+      ['На телефоне', ['Нажмите на работу — снизу откроется панель со сроками, бригадой и готовностью. Чтобы перетащить полоску, задержите на ней палец.']]
+    ].map(function (s, i) {
+      return '<section><h3><span class="n">' + (i + 1) + '</span>' + s[0] + '</h3><ul>' + s[1].map(function (li) { return '<li>' + li + '</li>'; }).join('') + '</ul></section>';
+    }).join('');
+    var reset = el('button', 'btn ghost left', 'Сбросить демо-данные'); reset.type = 'button';
+    reset.addEventListener('click', function () {
+      confirmBox('Вернуть исходные демо-данные? Все изменения пропадут.', 'Вернуть').then(function (ok) {
+        if (!ok) return;
+        store = window.GPR_DEMO.demo(); saveStore(); crewSel = null; paintCrewColors();
+        go(view === 'crews' ? 'crews' : 'objects'); toast('Демо-данные восстановлены');
+      });
+    });
+    var ok = el('button', 'btn', 'Понятно'); ok.type = 'button'; ok.addEventListener('click', closeModal);
+    openModal('Как пользоваться', body, [reset, ok], true);
+    try { localStorage.setItem('ds-gpr-help-seen', '1'); } catch (e) { /* ignore */ }
   }
 
   // ── Excel ──────────────────────────────────────────────────────────
@@ -1471,6 +1832,7 @@
     var box = el('div', 'cal');
     function paint() {
       box.innerHTML = '';
+      box.appendChild(el('p', 'cal-tip', single ? 'Выберите дату' : (e ? 'Нажмите на день начала, затем на день окончания' : 'Теперь нажмите на день окончания')));
       var wrap = el('div', 'cal-months'); wrap.style.setProperty('--m', months);
       for (var m = 0; m < months; m++) {
         var first = new Date(view.getFullYear(), view.getMonth() + m, 1);
@@ -1568,19 +1930,16 @@
     window.addEventListener('scroll', function () { if (popOwner && !$('#pop').hidden) placePop(popOwner); }, { passive: true });
     $('#newObject').addEventListener('click', function () { openObjectEditor(null); });
     $('#editObject').addEventListener('click', function () { openObjectEditor(currentObj); });
-    $('#resetDemo').addEventListener('click', function () {
-      confirmBox('Вернуть исходные демо-данные? Все изменения в прототипе пропадут.', 'Вернуть').then(function (ok) {
-        if (!ok) return;
-        store = window.GPR_DEMO.demo(); saveStore(); crewSel = null; paintObjects(); toast('Демо-данные восстановлены');
-      });
-    });
+    $('#helpBtn').addEventListener('click', openHelp);
+    $('#newCrew').addEventListener('click', function () { openCrewEditor(null); });
+    document.addEventListener('click', function (e) { if (e.target.closest('[data-help]')) openHelp(); });
     document.querySelectorAll('#zoomSeg button').forEach(function (b) {
       b.addEventListener('click', function () { applyZoom(b.dataset.zoom); });
     });
     $('#toToday').addEventListener('click', function () { gantt.showDate(today()); });
     $('#showMats').addEventListener('change', function (e) { prefs.mats = e.target.checked; savePrefs(); gantt.refreshData(); });
-    $('#addTask').addEventListener('click', function () { addTaskNear(gantt.getSelectedId()); });
-    $('#addGroup').addEventListener('click', addGroup);
+    $('#addTask').addEventListener('click', function () { openNewTask(gantt.getSelectedId()); });
+    $('#addGroup').addEventListener('click', openNewStage);
     $('#addMat').addEventListener('click', function () { openMaterialEditor(null); });
     $('#fixPlan').addEventListener('click', fixPlan);
     $('#undoBtn').addEventListener('click', undo);
@@ -1607,5 +1966,6 @@
   loadStore();
   wire();
   paintObjects();
+  try { if (!localStorage.getItem('ds-gpr-help-seen')) setTimeout(openHelp, 400); } catch (e) { /* ignore */ }
   if (window.gantt) { setupGantt(); paintCrewColors(); }
 })();

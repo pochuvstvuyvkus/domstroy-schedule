@@ -5,16 +5,16 @@
   var DAY = 864e5;
 
   var CREWS = [
-    { id: 'geo', name: 'Геодезист', color: '#7C8A96' },
-    { id: 'tech', name: 'Техника (экскаватор)', color: '#8C6E54' },
-    { id: 'b1', name: 'Бригада №1 · бетон', color: '#B86B2E' },
-    { id: 'b2', name: 'Бригада №2 · кладка', color: '#C8891A' },
-    { id: 'roof', name: 'Кровельщики', color: '#9C4F43' },
-    { id: 'win', name: 'Монтажники окон', color: '#4F7D99' },
-    { id: 'elec', name: 'Электрик', color: '#3A7CA5' },
-    { id: 'plumb', name: 'Сантехники', color: '#2F8F8A' },
-    { id: 'plast', name: 'Штукатуры', color: '#6E7F3E' },
-    { id: 'fin', name: 'Отделочники', color: '#4E8A5E' }
+    { id: 'geo', name: 'Геодезист', color: '#7C8A96', lead: 'Олег Смирнов', phone: '+7 900 111-20-01' },
+    { id: 'tech', name: 'Техника (экскаватор)', color: '#8C6E54', lead: 'Аренда, диспетчер Ирина', phone: '+7 900 111-20-02' },
+    { id: 'b1', name: 'Бригада №1 · бетон', color: '#B86B2E', lead: 'Андрей Козлов', phone: '+7 900 111-20-03' },
+    { id: 'b2', name: 'Бригада №2 · кладка', color: '#C8891A', lead: 'Сергей Волков', phone: '+7 900 111-20-04' },
+    { id: 'roof', name: 'Кровельщики', color: '#9C4F43', lead: 'Дмитрий Орлов', phone: '+7 900 111-20-05' },
+    { id: 'win', name: 'Монтажники окон', color: '#4F7D99', lead: 'Павел Егоров', phone: '+7 900 111-20-06' },
+    { id: 'elec', name: 'Электрик', color: '#3A7CA5', lead: 'Игорь Белов', phone: '+7 900 111-20-07' },
+    { id: 'plumb', name: 'Сантехники', color: '#2F8F8A', lead: 'Николай Фёдоров', phone: '+7 900 111-20-08' },
+    { id: 'plast', name: 'Штукатуры', color: '#6E7F3E', lead: 'Руслан Ахметов', phone: '+7 900 111-20-09' },
+    { id: 'fin', name: 'Отделочники', color: '#4E8A5E', lead: 'Елена Морозова', phone: '+7 900 111-20-10' }
   ];
 
   // этапы и работы типового дома: k — ключ, d — дней, after — после каких работ
@@ -185,8 +185,8 @@
     var d1 = { walls: { longer: 3 }, rafters: { late: 2 } };
     var d4 = { brick: { longer: 4 } };
     return {
-      v: 1,
-      crews: CREWS,
+      v: 2,
+      crews: CREWS.map(function (c) { return Object.assign({}, c); }),
       objects: [
         buildObject({ id: 'o1', title: 'Дом 120 м², газоблок и кирпич', address: 'х. Большой Лог, ул. Садовая, 14',
           status: 'work', startOffset: -62, baseline: true, delays: d1, planShift: shifted(d1) }),

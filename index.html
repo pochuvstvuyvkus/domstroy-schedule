@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>График производства работ — ДомСтрой</title>
-<meta name="description" content="Прототип внутреннего графика производства работ: объекты, работы, бригады, поставки материалов.">
+<meta name="description" content="График производства работ: объекты, работы, бригады, поставки материалов.">
 <meta name="robots" content="noindex">
 <meta name="theme-color" content="#F6F5F2">
 <script>/* светлая тема по умолчанию, тёмная — если сотрудник сам её выбрал */
@@ -15,7 +15,7 @@ catch(e){document.documentElement.setAttribute("data-theme","light")}</script>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Onest:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap">
 <link rel="icon" href="img/favicon.png" type="image/png">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/dhtmlx-gantt@10.0.3/codebase/dhtmlxgantt.css">
-<link rel="stylesheet" href="app.css?v=2">
+<link rel="stylesheet" href="app.css?v=4">
 </head>
 <body>
 
@@ -26,12 +26,13 @@ catch(e){document.documentElement.setAttribute("data-theme","light")}</script>
   </a>
   <div class="top-title">
     <b>График производства работ</b>
-    <span class="proto">Прототип · данные выдуманные</span>
+    <span class="proto">Демо-данные</span>
   </div>
   <nav class="tabs-top" aria-label="Разделы">
     <button type="button" data-go="objects" aria-pressed="true">Объекты</button>
     <button type="button" data-go="crews" aria-pressed="false">Бригады</button>
   </nav>
+  <button class="help-btn" id="helpBtn" type="button"><span class="q">?</span><span class="t">Как пользоваться</span></button>
   <button class="icon-btn theme-btn" id="themeBtn" type="button" aria-label="Включить тёмную тему">
     <svg class="moon" viewBox="0 0 24 24"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5Z"/></svg>
     <svg class="sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
@@ -44,13 +45,12 @@ catch(e){document.documentElement.setAttribute("data-theme","light")}</script>
     <div class="view-head">
       <div>
         <h1>Объекты</h1>
-        <p class="muted" id="objSummary"></p>
+        <p class="muted"><span id="objSummary"></span> · нажмите на объект, чтобы открыть его график работ</p>
       </div>
       <button class="btn" type="button" id="newObject">+ Новый объект</button>
     </div>
+    <div class="today-bar" id="todayBar"></div>
     <div class="obj-grid" id="objGrid"></div>
-    <p class="foot muted">Это прототип: объекты, бригады и поставщики выдуманы, изменения хранятся только в этом браузере.
-      <button class="link" type="button" id="resetDemo">Вернуть исходные демо-данные</button></p>
   </section>
 
   <!-- график одного объекта -->
@@ -65,43 +65,58 @@ catch(e){document.documentElement.setAttribute("data-theme","light")}</script>
       </div>
       <p class="muted" id="oAddress"></p>
       <div class="stats" id="oStats"></div>
+      <div class="obj-progress"><div class="bar"><i id="oBar"></i></div></div>
     </div>
 
     <div class="toolbar" id="toolbar">
-      <div class="seg" id="zoomSeg" role="group" aria-label="Масштаб">
-        <button type="button" data-zoom="day">День</button>
-        <button type="button" data-zoom="week">Неделя</button>
-        <button type="button" data-zoom="month">Месяц</button>
+      <div class="tb-group" role="group" aria-label="Добавить">
+        <button class="tool primary" type="button" id="addTask">+ Работа</button>
+        <button class="tool" type="button" id="addGroup">+ Этап</button>
+        <button class="tool" type="button" id="addMat">+ Поставка</button>
       </div>
-      <button class="tool" type="button" id="toToday">Сегодня</button>
-      <label class="switch"><input type="checkbox" id="showMats" checked><span></span>Материалы</label>
       <span class="tool-sep"></span>
-      <button class="tool" type="button" id="addTask">+ Работа</button>
-      <button class="tool" type="button" id="addGroup">+ Этап</button>
-      <button class="tool" type="button" id="addMat">+ Поставка</button>
+      <div class="tb-group" role="group" aria-label="Вид">
+        <div class="seg" id="zoomSeg" role="group" aria-label="Масштаб">
+          <button type="button" data-zoom="day">День</button>
+          <button type="button" data-zoom="week">Неделя</button>
+          <button type="button" data-zoom="month">Месяц</button>
+        </div>
+        <button class="tool" type="button" id="toToday">Сегодня</button>
+        <label class="switch"><input type="checkbox" id="showMats" checked><span></span>Материалы</label>
+      </div>
       <span class="tool-sep"></span>
-      <button class="tool" type="button" id="fixPlan">Зафиксировать план</button>
-      <button class="tool" type="button" id="undoBtn" disabled>↶ Отменить</button>
-      <span class="tool-sep"></span>
-      <button class="tool" type="button" id="xlsBtn">Excel</button>
-      <button class="tool" type="button" id="printBtn">Печать</button>
+      <div class="tb-group" role="group" aria-label="План">
+        <button class="tool" type="button" id="fixPlan">Зафиксировать план</button>
+        <button class="tool" type="button" id="undoBtn" disabled>↶ Отменить</button>
+      </div>
+      <div class="tb-group tb-right" role="group" aria-label="Выгрузка">
+        <button class="tool" type="button" id="xlsBtn">Excel</button>
+        <button class="tool" type="button" id="printBtn">Печать</button>
+      </div>
     </div>
-    <p class="hint-line muted" id="hintLine"></p>
+    <div class="tips" id="tips"></div>
     <div class="legend" id="legend"></div>
     <div class="gantt-wrap"><div id="gantt"></div></div>
   </section>
 
-  <!-- бригады по всем объектам -->
+  <!-- бригады: справочник и их работы по всем объектам -->
   <section class="view" id="vCrews" hidden>
     <div class="view-head">
       <div>
         <h1>Бригады</h1>
-        <p class="muted">Кто где работает по всем объектам. Красным — бригада нужна в двух местах одновременно.</p>
+        <p class="muted">Кто чем занят на всех объектах. Нажмите на бригаду — внизу появятся все её работы.</p>
       </div>
+      <button class="btn" type="button" id="newCrew">+ Бригада</button>
     </div>
-    <div class="crew-chips" id="crewChips"></div>
-    <div class="conflicts" id="conflicts"></div>
-    <div class="gantt-wrap" id="crewWrap"></div>
+    <div class="crew-grid" id="crewGrid"></div>
+    <div class="crew-plan">
+      <div class="crew-plan-head">
+        <h2 id="crewPlanTitle"></h2>
+        <p class="muted">Нажмите на работу, чтобы поменять сроки, готовность или передать другой бригаде.</p>
+      </div>
+      <div class="conflicts" id="conflicts"></div>
+      <div class="gantt-wrap" id="crewWrap"></div>
+    </div>
   </section>
 </main>
 
@@ -119,7 +134,7 @@ catch(e){document.documentElement.setAttribute("data-theme","light")}</script>
 <div id="print" aria-hidden="true"></div>
 
 <script src="https://cdn.jsdelivr.net/npm/dhtmlx-gantt@10.0.3/codebase/dhtmlxgantt.js"></script>
-<script src="data.js?v=2"></script>
-<script src="app.js?v=2"></script>
+<script src="data.js?v=4"></script>
+<script src="app.js?v=4"></script>
 </body>
 </html>
