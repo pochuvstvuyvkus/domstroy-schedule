@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>График строительства — ДомСтрой</title>
+<meta name="description" content="Примерный график строительства дома: двигайте ползунок и этапы, чтобы увидеть, когда дом будет готов.">
+<meta name="theme-color" content="#15181A">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Onest:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap">
+<link rel="icon" href="img/favicon.png" type="image/png">
+<meta property="og:title" content="График строительства дома — ДомСтрой">
+<meta property="og:description" content="Двигайте ползунок и этапы — график покажет, когда дом будет готов.">
+<link rel="stylesheet" href="style.css?v=1">
+<style>
+  .sched{padding:clamp(18px,4vw,36px) 0 48px}
+  .sched h1{font-size:clamp(26px,5vw,40px);margin-top:6px}
+  .sched .lede{margin-top:8px}
+  .house{display:grid;grid-template-columns:1fr auto;gap:14px 20px;align-items:end;margin:20px 0 18px;
+    padding:16px;border:1px solid var(--line);border-radius:16px;background:var(--surface)}
+  @media (max-width:640px){.house{grid-template-columns:1fr}}
+  .house .tabs{min-width:min(420px,100%)}
+  @media (max-width:520px){
+    .house .tabs{grid-template-columns:repeat(3,1fr)}
+    .house .tab{display:grid;justify-content:center;text-align:center;padding:6px 4px;min-height:44px}
+    .house .tab b{font-size:13px}
+    .house{padding:12px;gap:12px;margin:14px 0}
+    .sched .lede{font-size:14px}
+  }
+  .in-tg .bar{display:none}
+  .in-tg .sched{padding-top:12px}
+  .in-tg #cta{display:none}
+</style>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+</head>
+<body>
+<header class="bar">
+  <div class="wrap">
+    <a class="brand" href="./" aria-label="ДомСтрой">
+      <img class="lg on-light" src="img/logo.png" alt="ДомСтрой" width="478" height="322">
+      <img class="lg on-dark" src="img/logo-light.png" alt="" aria-hidden="true" width="478" height="322">
+    </a>
+    <a class="tel" href="tel:+79618177717">+7 961 817-77-17</a>
+  </div>
+</header>
+
+<main class="sched">
+  <div class="wrap">
+    <p class="eyebrow">График строительства</p>
+    <h1>Когда дом будет готов</h1>
+    <p class="lede">Выберите площадь и вариант, двигайте ползунок начала. Этапы можно перетаскивать — следующие
+      сдвинутся сами. График примерный, точный составляем в договоре.</p>
+
+    <div class="house">
+      <div class="field">
+        <span class="lbl">Площадь дома</span>
+        <div class="area-row">
+          <span class="area-box"><input id="area" type="number" min="40" max="400" value="110" inputmode="numeric"
+            aria-label="Площадь дома"><span class="u">м²</span></span>
+        </div>
+        <input id="areaRange" type="range" min="60" max="250" value="110" aria-label="Площадь дома, ползунок">
+      </div>
+      <div class="field">
+        <span class="lbl">Вариант</span>
+        <div class="tabs" id="tiers" role="group" aria-label="Вариант готовности"></div>
+      </div>
+    </div>
+
+    <div id="gantt"></div>
+    <div class="g-cta" id="cta" style="margin-top:18px">
+      <a class="btn" id="ctaLink" href="https://t.me/domstroy161_bot" target="_blank" rel="noopener">Хочу дом к этой дате</a>
+    </div>
+  </div>
+</main>
+
+<script src="gantt.js?v=2"></script>
+<script>
+(function () {
+  'use strict';
+  var BOT = 'https://t.me/domstroy161_bot?start=';
+  var TIERS = [['base', 'Стройвариант'], ['fine', 'Чистовая'], ['turnkey', 'Под ключ']];
+  var q = new URLSearchParams(location.search);
+  var area = Math.min(400, Math.max(40, Math.round(+q.get('area') || 110)));
+  var tier = ['base', 'fine', 'turnkey'].indexOf(q.get('tier')) >= 0 ? q.get('tier') : 'fine';
+
+  var tg = window.Telegram && window.Telegram.WebApp;
+  var inTelegram = !!(tg && tg.initData);
+  if (inTelegram) {
+    document.documentElement.classList.add('in-tg');
+    document.documentElement.setAttribute('data-theme', tg.colorScheme === 'dark' ? 'dark' : 'light');
+    tg.ready();
+    tg.expand();
+  }
+
+  function ymd(d) {
+    return d.getFullYear() + String(d.getMonth() + 1).padStart(2, '0') + String(d.getDate()).padStart(2, '0');
+  }
+  function payload(s) {
+    // в ссылку на бота помещается 64 символа: площадь, вариант, начало и окончание
+    return 'sch_' + Math.round(s.area) + '_' + s.tier + '_' + ymd(s.start) + '_' + ymd(s.finish);
+  }
+
+  var gantt = window.DSGantt.mount(document.getElementById('gantt'), {
+    area: area, tier: tier,
+    onChange: function (s) {
+      var link = BOT + payload(s);
+      document.getElementById('ctaLink').href = link;
+      if (inTelegram) {
+        tg.MainButton.setText('Хочу дом к ' + s.finishText);
+        tg.MainButton.show();
+      }
+    }
+  });
+
+  if (inTelegram) {
+    tg.MainButton.onClick(function () {
+      tg.openTelegramLink(BOT + payload(gantt.summary()));
+      tg.close();
+    });
+  }
+
+  var areaInput = document.getElementById('area');
+  var areaRange = document.getElementById('areaRange');
+  var tiers = document.getElementById('tiers');
+  function paintTiers() {
+    tiers.innerHTML = '';
+    TIERS.forEach(function (t) {
+      var b = document.createElement('button');
+      b.type = 'button'; b.className = 'tab';
+      b.setAttribute('aria-pressed', t[0] === tier ? 'true' : 'false');
+      b.innerHTML = '<b>' + t[1] + '</b>';
+      b.addEventListener('click', function () { tier = t[0]; paintTiers(); gantt.set(area, tier); });
+      tiers.appendChild(b);
+    });
+  }
+  function setArea(v, from) {
+    area = Math.min(400, Math.max(40, Math.round(+v || 0)));
+    if (from !== 'inp') areaInput.value = area;
+    if (from !== 'range') areaRange.value = Math.min(250, Math.max(60, area));
+    gantt.set(area, tier);
+  }
+  areaInput.addEventListener('input', function () { if (areaInput.value) setArea(areaInput.value, 'inp'); });
+  areaRange.addEventListener('input', function () { setArea(areaRange.value, 'range'); });
+  areaInput.value = area; areaRange.value = Math.min(250, Math.max(60, area));
+  paintTiers();
+})();
+</script>
+</body>
+</html>
